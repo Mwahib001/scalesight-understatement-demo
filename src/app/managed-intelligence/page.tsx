@@ -1,5 +1,4 @@
-import { ManagedIntelligence } from "../../components/ManagedWorkflow";
-export const metadata = { title: "Managed Intelligence | ScaleSight" };
+import { ManagedIntelligence } from "../../components/ServicePages";
 export default function Page() {
   return <ManagedIntelligence />;
 }

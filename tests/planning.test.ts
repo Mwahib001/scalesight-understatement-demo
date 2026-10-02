@@ -1,541 +1,483 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { operatingRows } from "../src/data/operatingRows";
+import { products } from "../src/data/products";
 import {
-  buildPlan,
-  planningReducer,
-  defaultState,
-  sanitizeState,
-  comparePlans,
-} from "../src/engine/scenarioEngine";
+  variants,
+  monitoringCounts,
+  immediateActions,
+} from "../src/data/variants";
+import { fitComposition, learningCohorts } from "../src/data/fitComposition";
 import {
-  skus,
-  history,
-  purchaseOrders,
-  getSku,
-  events,
-  snapshots,
-} from "../src/data/kelarune";
-import { generateHistory, addDays, PLANNING_DATE } from "../src/data/dataset";
-import { recommend } from "../src/engine/recommendationEngine";
-import { percent } from "../src/engine/formatters";
-import type {
-  MarketingEvent,
-  WeeklySales,
-  PurchaseOrder,
-} from "../src/data/entities";
-import { inventoryFor } from "../src/engine/inventoryEngine";
-import { forecastSku, revenueWindow } from "../src/engine/forecastEngine";
-function assertFinite(value: unknown): void {
-  if (typeof value === "number") assert.ok(Number.isFinite(value));
-  else if (Array.isArray(value)) value.forEach(assertFinite);
-  else if (value && typeof value === "object")
-    Object.values(value).forEach(assertFinite);
-}
-const base = buildPlan(defaultState());
-const near = (a: number, b: number) =>
-  assert.ok(Math.abs(a - b) < 0.001, `${a} != ${b}`);
-near(base.revenue30, 318000);
-assert.notEqual(base.revenueGrowthPct, null);
-near(base.revenueGrowthPct!, 8.4);
-near(base.riskValue, 42000);
-assert.equal(base.attention, 5);
-assert.equal(base.high, 3);
-assert.equal(base.watch, 2);
-assert.equal(base.stockouts, 3);
-assert.equal(skus.length, 24);
-assert.equal(skus.filter((s) => s.detailed).length, 10);
-assert.deepEqual(generateHistory(skus), history);
-for (const [id, cover, risk] of [
-  ["mango-12", 3.4, "High risk"],
-  ["berry-6", 13.1, "Overstock"],
-  ["citrus-12", 5.2, "Watch"],
-  ["lime-6", 5.2, "Healthy"],
-  ["starter-kit", 6, "Healthy"],
-] as const) {
-  const r = base.rows.find((r) => r.sku.id === id)!;
-  assert.equal(Number(r.inventory.weeksOfCover.toFixed(1)), cover);
-  assert.equal(r.inventory.risk, risk);
-}
-for (const row of base.rows) {
-  if (row.inventory.risk === "High risk")
-    assert.ok(row.inventory.projection.some((p) => p.projected < p.safety));
-  assert.equal(
-    row.inventory.stockoutDate,
-    row.inventory.projection.find((p) => p.projected <= 0)?.weekStart ?? null,
+  fitSignals,
+  cherryMovement,
+  matchingSetRisks,
+} from "../src/data/fitSignals";
+import {
+  sizeCurves,
+  initialDepth,
+  baseDepth,
+  plusDepth,
+} from "../src/data/sizeCurves";
+import { baseScenario, scenarioPresets } from "../src/data/scenarioPresets";
+import { priorities, reviewChanges } from "../src/data/weeklyBrief";
+import {
+  calculateRetainedDemand,
+  calculateExchangeOutRate,
+  calculateCommercialDemandIndex,
+  calculateWeeksOfCover,
+  calculateLeadTimeDemand,
+  calculateSafetyStock,
+  calculateReorderGap,
+  calculateProjectedInventory,
+  calculateSizeDepth,
+  calculateSetRisk,
+  derivedPosition,
+} from "../src/lib/calculations";
+import { applyScenario } from "../src/lib/scenario";
+import {
+  generateModelRecommendation,
+  applyAnalystOverride,
+  type RecommendationInput,
+} from "../src/lib/recommendations";
+import type { ScenarioMode } from "../src/types";
+
+const sum = (values: readonly number[]) =>
+  values.reduce((total, value) => total + value, 0);
+
+test("all CSV values and identifiers survive loading unchanged", () => {
+  const [header, ...lines] = readFileSync(
+    "files/understatement-85-variant-dataset.csv",
+    "utf8",
+  )
+    .trim()
+    .split(/\r?\n/);
+  const fields = header.split(",");
+  const numeric = new Set([
+    "onHand",
+    "incoming",
+    "grossSales",
+    "returns",
+    "exchangeOut",
+    "exchangeIn",
+    "retainedDemand",
+    "forecastWeeklyUnits",
+    "weeksOfCover",
+  ]);
+  const source = lines.map((line) =>
+    Object.fromEntries(
+      line
+        .split(",")
+        .map((value, i) => [
+          fields[i],
+          numeric.has(fields[i]) ? Number(value) : value,
+        ]),
+    ),
   );
-  let previous = row.inventory.usableInventory;
-  row.inventory.projection.forEach((p) => {
-    near(p.projected, previous + p.arrivals - p.demand);
-    previous = p.projected;
-  });
-  row.recommendations.forEach((r) =>
+  assert.deepEqual(source, operatingRows);
+  for (const [i, v] of variants.entries()) {
+    const row = operatingRows[i];
+    assert.equal(v.publicSku, row.publicSku);
+    assert.equal(v.barcode, row.barcode);
+    assert.equal(v.sourceRetainedDemand, row.retainedDemand);
+    assert.equal(v.sourceWeeksOfCover, row.weeksOfCover);
+    assert.equal(v.analystRecommendation, row.decision);
+    assert.equal(v.confidence, "MODERATE");
+    assert.equal(derivedPosition(v).retainedDemand, row.retainedDemand);
     assert.ok(
-      r.whatChanged && r.whyItMatters && r.recommendation && r.decisionRequired,
-    ),
-  );
-}
-const orange = getSku("orange-12");
-const delayed = inventoryFor(
-  orange,
-  forecastSku(orange, 13, events),
-  purchaseOrders,
-);
-const onTime = inventoryFor(
-  orange,
-  forecastSku(orange, 13, events),
-  purchaseOrders.map((p) =>
-    p.originalArrival ? { ...p, expectedArrival: p.originalArrival } : p,
-  ),
-);
-assert.ok(
-  delayed.stockoutDate &&
-    onTime.stockoutDate &&
-    delayed.stockoutDate < onTime.stockoutDate,
-);
-assert.ok(
-  base.rows
-    .find((r) => r.sku.id === "winter-kit")!
-    .recommendations.some(
-      (r) => r.title === "Business context changes the decision",
-    ),
-);
-const stress = buildPlan({ ...defaultState(), demandUpliftPct: 50 });
-assert.ok(stress.revenue30 > base.revenue30);
-assert.ok(
-  stress.selected.inventory.weeksOfCover < base.selected.inventory.weeksOfCover,
-);
-const delta = comparePlans(stress, base).stockoutDaysEarlier;
-assert.equal(
-  delta,
-  (Date.parse(base.selected.inventory.stockoutDate!) -
-    Date.parse(
-      stress.selected.inventory.projection.find((p) => p.projected <= 0)!
-        .weekStart,
-    )) /
-    86400000,
-);
-assert.deepEqual(buildPlan(defaultState()), base);
-for (const horizon of [4, 8, 13, 26] as const)
-  for (const mode of ["base", "upside", "downside"] as const)
-    for (const s of skus) {
-      const p = buildPlan({
-        ...defaultState(s.id),
-        forecastHorizon: horizon,
-        scenarioMode: mode,
-        demandUpliftPct: 50,
-        adSpendChangePct: -20,
-        promotionEnabled: true,
-        promotionDiscountPct: 40,
-        incomingInventory: 0,
-        purchaseQuantity: 2000,
-        leadTimeWeeks: 12,
-      });
-      assertFinite(p);
-      assert.ok(Number.isFinite(p.revenue30));
-      for (const r of p.rows) {
-        assert.ok(Number.isFinite(r.inventory.weeksOfCover));
-        if (r.inventory.risk === "High risk") assert.ok(r.inventory.breach);
-      }
-    }
-assert.equal(
-  sanitizeState({ ...defaultState(), demandUpliftPct: NaN }).demandUpliftPct,
-  0,
-);
-
-for (const row of history) {
-  near(row.revenue, row.units * getSku(row.skuId).price * (1 - row.discount));
-  assert.ok(row.discount >= 0 && row.discount <= 1);
-}
-const edited = planningReducer(defaultState(), {
-  type: "update",
-  value: {
-    selectedSkuId: "orange-12",
-    forecastHorizon: 26,
-    scenarioMode: "upside",
-    demandUpliftPct: 40,
-    adSpendChangePct: 50,
-    promotionEnabled: true,
-    promotionDiscountPct: 30,
-    leadTimeWeeks: 10,
-    incomingInventory: 999,
-    purchaseQuantity: 3000,
-  },
-});
-assert.deepEqual(planningReducer(edited, { type: "reset" }), defaultState());
-const bought = buildPlan({ ...defaultState(), purchaseQuantity: 1000 });
-near(bought.workingCapital - base.workingCapital, 5000);
-near(
-  bought.selected.inventory.projection[5].projected -
-    base.selected.inventory.projection[5].projected,
-  1000,
-);
-near(bought.revenue30, base.revenue30);
-const promoted = buildPlan({
-  ...defaultState(),
-  promotionEnabled: true,
-  promotionDiscountPct: 20,
-});
-assert.ok(
-  promoted.selected.inventory.weeklyDemand >
-    base.selected.inventory.weeklyDemand,
-);
-assert.ok(
-  promoted.selected.forecast[0].sellingPrice <
-    base.selected.forecast[0].sellingPrice,
-);
-assert.ok(promoted.selected.margin < base.selected.margin);
-const drySku = { ...getSku("mango-12"), baseWeeklyDemand: 0 };
-assertFinite(inventoryFor(drySku, forecastSku(drySku, 13, []), []));
-
-near(
-  revenueWindow(base.revenueSeries, 30).reduce((n, p) => n + p.revenue, 0),
-  base.revenue30,
-);
-assert.equal(revenueWindow(base.revenueSeries, 30).at(-1)!.shownDays, 2);
-let regressionCount = 0;
-function regression(name: string, verify: () => void) {
-  verify();
-  regressionCount++;
-  console.log(`PASS ${name}`);
-}
-regression("Available and on-hand snapshots feed distinct calculations", () => {
-  const snapshot = snapshots.find((s) => s.skuId === "mango-12")!;
-  const saved = { ...snapshot };
-  try {
-    snapshot.available = 1200;
-    snapshot.committed = 1200;
-    const inventory = buildPlan(defaultState()).selected.inventory;
-    near(inventory.weeksOfCover, 1200 / 705);
-    near(inventory.currentInventory, 2400);
-    near(inventory.projection[0].projected, 1695);
-    snapshot.onHand = 2000;
-    near(
-      buildPlan(defaultState()).selected.inventory.projection[0].projected,
-      1295,
+      Math.abs(derivedPosition(v).weeksOfCover - row.weeksOfCover) <= 0.050001,
     );
-  } finally {
-    Object.assign(snapshot, saved);
   }
 });
-regression(
-  "Shrink changes usable stock, not available cover or on-hand projection",
-  () => {
-    const sku = getSku("mango-12");
-    const inv = inventoryFor(
-      sku,
-      forecastSku(sku, 13, []),
-      purchaseOrders,
-      5,
-      1200,
-      0,
-      0.1,
-      false,
-      snapshots.find((s) => s.skuId === sku.id),
-    );
-    near(inv.usableInventory, 2160);
-    near(inv.weeksOfCover, 2400 / 705);
-    near(inv.projection[0].projected, 1695);
-    near(inv.reorderGap, 870);
-  },
-);
-regression(
-  "Reviewed forecast units and prices survive every scenario control",
-  () => {
-    const changes = [
-      { promotionEnabled: true, promotionDiscountPct: 40 },
-      { demandUpliftPct: 50, adSpendChangePct: 50 },
-      {
-        scenarioMode: "upside" as const,
-        leadTimeWeeks: 12,
-        incomingInventory: 0,
-        purchaseQuantity: 5000,
-      },
-    ];
-    for (const change of changes) {
-      const plan = buildPlan({ ...defaultState(), ...change });
-      assert.deepEqual(
-        plan.revenueSeries.map((p) => p.previous),
-        base.revenueSeries.map((p) => p.previous),
+
+test("complete eight-product catalog excludes Plum 90E and all hypothetical categories", () => {
+  assert.equal(products.length, 8);
+  assert.equal(variants.length, 85);
+  assert.equal(new Set(variants.map((v) => v.publicSku)).size, 85);
+  assert.equal(new Set(variants.map((v) => v.barcode)).size, 85);
+  const counts = Object.fromEntries(
+    products.map((p) => [
+      p.productId,
+      variants.filter((v) => v.productId === p.productId).length,
+    ]),
+  );
+  assert.deepEqual(counts, {
+    "DL-BRA": 24,
+    "DL-BTM": 7,
+    "PL-BRA": 19,
+    "PL-BTM": 7,
+    "CP-BRA": 7,
+    "CP-BTM": 7,
+    "CH-BRA": 7,
+    "CH-BTM": 7,
+  });
+  assert.ok(
+    !variants.some(
+      (v) =>
+        (v.productId === "PL-BRA" && v.size === "90E") || v.size.includes("+"),
+    ),
+  );
+  assert.equal(variants.filter((v) => v.naturanaPublicSku !== null).length, 4);
+  for (const v of variants) {
+    if (v.sizeSystem === "BAND_CUP") assert.equal(`${v.band}${v.cup}`, v.size);
+    if (v.sizeSystem === "EU_NUMERIC")
+      assert.equal(String(v.numericSize), v.size);
+    if (v.sizeSystem === "ALPHA") {
+      const matching = variants.find(
+        (m) => m.demoVariantId === v.matchingVariantId,
       );
-      assert.deepEqual(
-        plan.selected.allForecast.map((p) => p.previousForecast),
-        base.selected.allForecast.map((p) => p.previousForecast),
-      );
-    }
-    const sku = getSku("mango-12"),
-      price = sku.price;
-    try {
-      sku.price *= 0.8;
-      assert.deepEqual(
-        buildPlan(defaultState()).revenueSeries.map((p) => p.previous),
-        base.revenueSeries.map((p) => p.previous),
-      );
-    } finally {
-      sku.price = price;
-    }
-  },
-);
-regression(
-  "Planned replenishment moves with longer and shorter lead times without mutating orders",
-  () => {
-    const saved = structuredClone(purchaseOrders);
-    for (const leadTimeWeeks of [2, 12]) {
-      const plan = buildPlan({ ...defaultState("peach-6"), leadTimeWeeks });
-      const po = plan.selected.inventory.orders.find(
-        (o) => o.id === "PLAN-8-0",
-      )!;
-      near(
-        (Date.parse(po.expectedArrival) - Date.parse(po.orderDate)) / 86400000,
-        leadTimeWeeks * 7,
-      );
-      if (leadTimeWeeks === 12) assert.ok(plan.selected.inventory.stockoutDate);
-    }
-    assert.deepEqual(purchaseOrders, saved);
-  },
-);
-regression(
-  "Half-week incoming and purchase arrivals round to a day, not a whole week",
-  () => {
-    const plan = buildPlan({
-      ...defaultState("berry-6"),
-      leadTimeWeeks: 3.5,
-      incomingInventory: 100,
-      purchaseQuantity: 100,
-    });
-    for (const id of ["SCENARIO-INCOMING", "SCENARIO-PURCHASE"]) {
-      assert.equal(
-        plan.selected.inventory.orders.find((o) => o.id === id)!
-          .expectedArrival,
-        addDays(PLANNING_DATE, 25),
-      );
-    }
-  },
-);
-regression(
-  "Supplier-delay warnings require an earlier breach or stockout",
-  () => {
-    const sku = { ...getSku("mango-12"), currentInventory: 500 };
-    const po: PurchaseOrder = {
-      id: "DELAY",
-      skuId: sku.id,
-      quantity: 1200,
-      unitCost: sku.unitCost,
-      orderDate: "2026-08-31",
-      originalArrival: "2026-10-12",
-      expectedArrival: "2026-10-19",
-      status: "delayed",
-    };
-    const inv = inventoryFor(sku, forecastSku(sku, 13, []), [po]);
-    assert.equal(inv.delayImpacts.length, 0);
-    assert.ok(
-      !recommend(sku, inv, [], []).some(
-        (r) => r.title === "Replenishment Timing Risk",
-      ),
-    );
-    assert.ok(
-      base.rows
-        .find((r) => r.sku.id === "orange-12")!
-        .recommendations.some((r) => r.title === "Replenishment Timing Risk"),
-    );
-    const moved = buildPlan({
-      ...defaultState("orange-12"),
-      leadTimeWeeks: orange.leadTimeWeeks + 1,
-    }).selected.inventory.orders.find((o) => o.status === "delayed")!;
+      assert.ok(matching);
+      assert.equal(matching.size, v.size);
+      assert.equal(matching.matchingSetId, v.matchingSetId);
+      assert.notEqual(matching.productType, v.productType);
+    } else assert.equal(v.matchingVariantId, undefined);
+  }
+});
+
+test("operating assumptions match the supplied product contracts", () => {
+  const expected = [
+    ["DL-BRA", 65, 64.95, 25, 8, 2, 8],
+    ["DL-BTM", 35, 34.95, 10, 6, 1.5, 6],
+    ["PL-BRA", 65, 59.9, 25, 8, 2, 8],
+    ["PL-BTM", 35, 34.95, 10, 6, 1.5, 6],
+    ["CP-BRA", 69, 69, 23, 7, 2, 8],
+    ["CP-BTM", 35, 35, 10, 5, 1.5, 6],
+    ["CH-BRA", 79, 79, 25, 7, 2, 8],
+    ["CH-BTM", 35, 35, 10, 5, 1.5, 6],
+  ];
+  assert.deepEqual(
+    products.map((p) => [
+      p.productId,
+      p.understatementPublicPriceEUR,
+      p.naturanaPublicPriceEUR,
+      p.syntheticUnitCostEUR,
+      p.leadTimeWeeks,
+      p.safetyStockWeeks,
+      p.targetCoverWeeks,
+    ]),
+    expected,
+  );
+});
+
+test("monitoring counts and brief priorities match every canonical total", () => {
+  assert.deepEqual(monitoringCounts, {
+    BUY_DEEPER: 6,
+    REPLENISH: 11,
+    INVESTIGATE: 1,
+    WATCH: 9,
+    REDUCE_NEXT_BUY: 9,
+    HOLD: 49,
+  });
+  assert.equal(immediateActions, 18);
+  assert.equal(sum(Object.values(monitoringCounts)), 85);
+  assert.equal(priorities.length, 4);
+  assert.equal(reviewChanges.length, 7);
+  assert.equal(matchingSetRisks.length, 2);
+  assert.deepEqual(
+    matchingSetRisks.map((r) => [r.set, r.topCover, r.bottomCover]),
+    [
+      ["Candy Pink", 2, 1.8],
+      ["Cherry", 2.2, 1.7],
+    ],
+  );
+  assert.equal(variants.filter(calculateSetRisk).length, 4);
+});
+
+test("fit movement calculations preserve the three narrative signals and Cherry L override", () => {
+  assert.deepEqual(
+    fitSignals.map((s) => [
+      s.label,
+      s.gross,
+      s.returns,
+      s.exchangeOut,
+      s.exchangeIn,
+      s.retained,
+      s.index,
+      s.decision,
+    ]),
+    [
+      ["Cherry L", 34, 4, 6, 1, 25, 86, "INVESTIGATE"],
+      ["Cherry M", 30, 2, 1, 4, 31, 119, "BUY_DEEPER"],
+      ["Candy Pink M", 36, 2, 1, 4, 37, 128, "BUY_DEEPER"],
+    ],
+  );
+  for (const s of fitSignals) {
     assert.equal(
-      (Date.parse(moved.expectedArrival) - Date.parse(moved.originalArrival!)) /
-        86400000,
-      28,
+      calculateRetainedDemand(s.gross, s.returns, s.exchangeOut, s.exchangeIn),
+      s.retained,
     );
-  },
-);
-regression(
-  "Promotion constraints require a campaign and account for cumulative demand and arrivals",
-  () => {
-    const sku = {
-      ...getSku("mango-12"),
-      currentInventory: 1500,
-      baseWeeklyDemand: 800,
-    };
-    const forecast = forecastSku(sku, 4, []);
-    const inv = inventoryFor(sku, forecast, []);
-    const hasPromotion = (
-      orders: PurchaseOrder[],
-      campaign: MarketingEvent[],
-      enabled = false,
-    ) =>
-      recommend(
-        sku,
-        inventoryFor(sku, forecast, orders),
-        campaign,
-        [],
-        enabled,
-      ).some((r) => r.title === "Promotion Constraint");
-    assert.ok(!hasPromotion([], []));
-    assert.ok(hasPromotion([], [], true));
-    const event: MarketingEvent = {
-      id: "PROMO",
-      type: "promotion",
-      name: "Two-week campaign",
-      startDate: "2026-09-21",
-      endDate: "2026-10-04",
-      confirmed: true,
-      skuIds: [sku.id],
-    };
-    assert.ok(hasPromotion([], [event]));
-    assert.ok(!hasPromotion([], [{ ...event, confirmed: false }]));
-    assert.ok(
-      !hasPromotion(
-        [],
-        [{ ...event, startDate: "2026-12-01", endDate: "2026-12-14" }],
-      ),
-    );
-    assert.ok(
-      !hasPromotion(
-        [
-          {
-            id: "SUPPLY",
-            skuId: sku.id,
-            quantity: 5000,
-            unitCost: sku.unitCost,
-            orderDate: "2026-09-01",
-            expectedArrival: "2026-09-14",
-            status: "confirmed",
-          },
-        ],
-        [event],
-      ),
-    );
-    assert.ok(inv.projection.every((p) => p.demand < sku.currentInventory));
-  },
-);
-regression(
-  "Forecast reviews sort observations and require consecutive weekly dates",
-  () => {
-    const sku = getSku("mango-12");
-    const rows: WeeklySales[] = ["2026-08-03", "2026-08-17", "2026-09-07"].map(
-      (weekStart) => ({
-        weekStart,
-        skuId: sku.id,
-        units: 100,
-        planUnits: 90,
-        revenue: 2400,
-        discount: 0,
-      }),
-    );
-    const hasReview = (h: WeeklySales[]) =>
-      recommend(sku, base.selected.inventory, [], h).some(
-        (r) => r.title === "Forecast Review Required",
-      );
-    assert.ok(!hasReview(rows));
-    const consecutive = rows.map((r, i) => ({
-      ...r,
-      weekStart: addDays("2026-08-24", i * 7),
-    }));
-    assert.ok(hasReview(consecutive.reverse()));
-    consecutive[1].units = 80;
-    assert.ok(!hasReview(consecutive));
-  },
-);
-regression(
-  "Purchase advice deducts supply already added and explains the remaining timing problem",
-  () => {
-    const partial = buildPlan({ ...defaultState(), purchaseQuantity: 300 });
-    assert.match(
-      partial.selected.recommendations[0].recommendation,
-      /330 further units/,
-    );
-    const complete = buildPlan({ ...defaultState(), purchaseQuantity: 5000 });
     assert.equal(
-      complete.selected.inventory.stockoutDate,
-      base.selected.inventory.stockoutDate,
+      Math.round(
+        calculateCommercialDemandIndex(
+          s.retained,
+          s.initialExpectedRetainedDemand,
+        )!,
+      ),
+      s.index,
     );
-    assert.match(
-      complete.selected.recommendations[0].recommendation,
-      /5,000 units are already added/,
+  }
+  assert.equal(Math.round(calculateExchangeOutRate(6, 34) * 100), 18);
+  assert.equal(
+    Math.round((cherryMovement.movedToM / cherryMovement.exchangeOut) * 100),
+    67,
+  );
+  const cherryL = variants.find(
+    (v) => v.productId === "CH-BRA" && v.size === "L",
+  )!;
+  assert.equal(cherryL.modelRecommendation, "BUY_DEEPER");
+  assert.equal(cherryL.analystRecommendation, "INVESTIGATE");
+  assert.equal(cherryL.overrideType, "FIT_SIGNAL");
+  assert.equal(
+    cherryL.analystReason,
+    "Elevated L→M exchanges materially weaken retained L demand.",
+  );
+});
+
+test("composition, curves, learning and size depths remain independent canonical fixtures", () => {
+  assert.deepEqual(
+    fitComposition.map((c) => c.initialSharePct),
+    [22, 27, 31, 20],
+  );
+  assert.deepEqual(
+    fitComposition.map((c) => c.currentSharePct),
+    [18, 34, 29, 19],
+  );
+  for (const key of ["initialSharePct", "currentSharePct"] as const)
+    assert.equal(sum(fitComposition.map((c) => c[key])), 100);
+  assert.ok(
+    fitComposition.every((c) => c.synthetic && c.confidence === "MODERATE"),
+  );
+  assert.equal(
+    fitComposition[1].currentSharePct - fitComposition[1].initialSharePct,
+    7,
+  );
+  for (const key of ["initial", "gross", "adjusted"] as const)
+    assert.equal(sum(sizeCurves.map((c) => c[key])), 100);
+  assert.deepEqual(
+    sizeCurves.map((c) => [c.initial, c.gross, c.adjusted]),
+    [
+      [9, 7, 7.5],
+      [18, 17, 17.5],
+      [24, 31, 33],
+      [25, 26, 22],
+      [13, 10, 10.5],
+      [7, 6, 6],
+      [4, 3, 3.5],
+    ],
+  );
+  assert.deepEqual(
+    initialDepth.map((c) => c.units),
+    [90, 180, 240, 250, 130, 70, 40],
+  );
+  assert.deepEqual(
+    baseDepth.map((c) => c.units),
+    [75, 175, 330, 220, 105, 60, 35],
+  );
+  assert.deepEqual(
+    baseDepth.map((c, i) => c.units - initialDepth[i].units),
+    [-15, -5, 90, -30, -25, -10, -5],
+  );
+  for (const curve of [initialDepth, baseDepth, plusDepth])
+    assert.equal(sum(curve.map((c) => c.units)), 1000);
+  assert.equal(
+    sum(plusDepth.filter((c) => c.size.includes("+")).map((c) => c.units)),
+    110,
+  );
+  assert.equal(learningCohorts.length, 6);
+  assert.deepEqual(
+    learningCohorts.map((c) => [c.initial, c.early, c.change]),
+    [
+      ["55% M / 45% L", "66% M / 34% L", "Increase M weighting"],
+      ["50% M / 50% L", "58% M / 42% L", "Moderate M uplift"],
+      ["60% L / 40% XL", "51% L / 49% XL", "Raise XL assumption"],
+      ["35% L / 65% XL", "37% L / 63% XL", "No material change"],
+      ["60% XL / 40% XXL", "57% XL / 43% XXL", "No material change"],
+      ["65% XXL / 35% 3XL", "62% XXL / 38% 3XL", "Keep under review"],
+    ],
+  );
+});
+
+test("all five scenarios use the exact supplied curves and only supplied operational counts", () => {
+  const expected: Record<ScenarioMode, number[]> = {
+    BASE: [75, 175, 330, 220, 105, 60, 35],
+    M_ACCELERATION: [70, 170, 360, 210, 100, 55, 35],
+    FIT_FRICTION: [75, 175, 350, 190, 110, 60, 40],
+    FULLER_CUP_SHIFT: [75, 175, 280, 80, 160, 30, 105, 60, 35],
+    SUPPLIER_DELAY: [75, 175, 330, 220, 105, 60, 35],
+  };
+  const catalog = JSON.stringify(variants);
+  for (const mode of Object.keys(expected) as ScenarioMode[]) {
+    const result = applyScenario({ ...scenarioPresets[mode].controls });
+    assert.ok(result.isExactPreset);
+    assert.deepEqual(result.unsupportedKeys, []);
+    assert.deepEqual(
+      result.curve.map((c) => c.units),
+      expected[mode],
     );
-    assert.match(
-      complete.selected.recommendations[0].recommendation,
-      /No further quantity.*Expedite supply/,
-    );
-    assert.doesNotMatch(
-      complete.selected.recommendations[0].recommendation,
-      /630 additional/,
-    );
-  },
-);
-regression(
-  "Brief outlook and risk-cost labels follow downside and long-horizon plans",
-  () => {
-    const down = buildPlan({ ...defaultState(), scenarioMode: "downside" });
-    assert.equal(down.outlook.title, "Demand is softening.");
-    assert.match(down.outlook.detail, /-7.9%/);
-    const berry = buildPlan({
-      ...defaultState("berry-6"),
-      forecastHorizon: 26,
-    });
-    assert.equal(
-      berry.selected.inventory.riskValueLabel,
-      "stock exposed to shortage",
-    );
-    assert.equal(berry.selected.inventory.excessUnits, 0);
-    near(berry.selected.inventory.riskValue, 62000);
-  },
-);
-regression(
-  "Stockout comparison distinguishes unchanged, newly appearing, cleared, earlier, and later",
-  () => {
-    const clear = buildPlan(defaultState("peach-6"));
-    assert.match(
-      comparePlans(clear, clear).stockoutExplanation,
-      /Neither plan/,
-    );
-    const shortage = buildPlan({
-      ...defaultState("peach-6"),
-      leadTimeWeeks: 12,
-    });
-    assert.match(
-      comparePlans(shortage, clear).stockoutExplanation,
-      /A stockout appears/,
-    );
-    assert.match(comparePlans(clear, shortage).stockoutExplanation, /clears/);
-    assert.match(comparePlans(base, base).stockoutExplanation, /unchanged/);
-    assert.match(comparePlans(stress, base).stockoutExplanation, /earlier/);
-    assert.match(comparePlans(base, stress).stockoutExplanation, /later/);
-  },
-);
-regression(
-  "Zero comparable sales is unavailable rather than infinite growth",
-  () => {
-    const saved = history.map((h) => h.revenue);
-    try {
-      history.forEach((h) => {
-        h.revenue = 0;
-      });
-      const plan = buildPlan(defaultState());
-      assert.equal(plan.revenueGrowthPct, null);
-      assert.equal(percent(plan.revenueGrowthPct), "No comparable sales");
-      assert.match(plan.outlook.detail, /no comparable sales/);
-      assertFinite(plan);
-    } finally {
-      history.forEach((h, i) => {
-        h.revenue = saved[i];
-      });
-    }
-  },
-);
-regression(
-  "Inactive SKUs cannot remain selected or contribute to the active portfolio",
-  () => {
-    const sku = getSku("berry-6");
-    try {
-      sku.active = false;
-      const plan = buildPlan({ ...defaultState(), selectedSkuId: sku.id });
-      assert.notEqual(plan.state.selectedSkuId, sku.id);
-      assert.ok(!plan.rows.some((r) => r.sku.id === sku.id));
-    } finally {
-      sku.active = true;
-    }
-  },
-);
-console.log(
-  `Planning fixtures passed: canonical metrics, all SKU covers, projections, delayed PO, context override, scenario dates, reset, 288 stress combinations; ${regressionCount} audit regression groups passed.`,
-);
+    assert.equal(sum(result.curve.map((c) => c.units)), 1000);
+    assert.equal(result.confidence, "MODERATE");
+  }
+  assert.equal(applyScenario(baseScenario).actions, 18);
+  assert.equal(applyScenario(baseScenario).setRisks, 2);
+  assert.equal(
+    applyScenario(scenarioPresets.M_ACCELERATION.controls).setRisks,
+    3,
+  );
+  const delayed = applyScenario(scenarioPresets.SUPPLIER_DELAY.controls);
+  assert.equal(delayed.actions, 26);
+  assert.equal(delayed.setRisks, 4);
+  assert.equal(
+    applyScenario(scenarioPresets.FULLER_CUP_SHIFT.controls).plusTestCapacity,
+    110,
+  );
+  assert.equal(JSON.stringify(variants), catalog);
+});
+
+test("buy quantity scales by the supplied formula and unsupported combinations get no invented counts", () => {
+  const scaled = applyScenario({ ...baseScenario, plannedBuyUnits: 1500 });
+  scaled.curve.forEach((c, i) =>
+    assert.ok(Math.abs(c.units - baseDepth[i].units * 1.5) < 1e-9),
+  );
+  assert.equal(sum(scaled.curve.map((c) => c.units)), 1500);
+  assert.equal(scaled.actions, null);
+  assert.equal(scaled.setRisks, null);
+  const edited = applyScenario({
+    ...baseScenario,
+    overallDemandUpliftPct: 20,
+    returnRateAdjustmentPP: 4,
+    launchExtensionEnabled: true,
+  });
+  assert.deepEqual(edited.unsupportedKeys, [
+    "overallDemandUpliftPct",
+    "returnRateAdjustmentPP",
+    "launchExtensionEnabled",
+  ]);
+  assert.equal(edited.actions, null);
+  assert.equal(edited.setRisks, null);
+  assert.deepEqual(
+    edited.curve.map((c) => c.units),
+    baseDepth.map((c) => c.units),
+  );
+});
+
+test("inventory formulas use explicit timing inputs without fabricated receipts or clamping deficits", () => {
+  assert.equal(calculateLeadTimeDemand(15, 7), 105);
+  assert.equal(calculateSafetyStock(15, 2), 30);
+  assert.equal(calculateReorderGap(135, 33, 0), 102);
+  assert.equal(calculateReorderGap(135, 33, 22), 80);
+  assert.equal(calculateReorderGap(135, 33, 150), 0);
+  assert.deepEqual(
+    calculateProjectedInventory(33, [0, 0, 22], [15, 30, 45]),
+    [18, 3, 10],
+  );
+  assert.deepEqual(
+    calculateProjectedInventory(33, [0, 0, 0], [15, 30, 45]),
+    [18, 3, -12],
+  );
+  assert.equal(calculateWeeksOfCover(33, 15), 2.2);
+  assert.equal(calculateSizeDepth(1000, 0.33), 330);
+});
+
+test("recommendation rules respect thresholds, confidence, incoming coverage and analyst context", () => {
+  const input: RecommendationInput = {
+    fitAdjustedDemand: 116,
+    forwardDemand: 116,
+    planningExpectation: 100,
+    weeksOfCover: 3,
+    targetCoverWeeks: 8,
+    confidence: "MODERATE",
+    reorderGap: 20,
+    exchangeOutRate: 0.02,
+    grossDemandStrong: true,
+    retainedMateriallyDisagrees: false,
+    signalMayMatter: true,
+    maintainDepthContext: false,
+  };
+  assert.equal(generateModelRecommendation(input), "BUY_DEEPER");
+  assert.equal(
+    generateModelRecommendation({ ...input, fitAdjustedDemand: 115 }),
+    "REPLENISH",
+  );
+  assert.equal(
+    generateModelRecommendation({ ...input, weeksOfCover: 4 }),
+    "REPLENISH",
+  );
+  assert.equal(
+    generateModelRecommendation({ ...input, confidence: "LOW" }),
+    "WATCH",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 100,
+      reorderGap: 0,
+    }),
+    "HOLD",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 86,
+      exchangeOutRate: 0.18,
+      retainedMateriallyDisagrees: true,
+    }),
+    "INVESTIGATE",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 86,
+      exchangeOutRate: 0.149,
+      retainedMateriallyDisagrees: true,
+    }),
+    "HOLD",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 90,
+      forwardDemand: 90,
+      weeksOfCover: 10,
+    }),
+    "REDUCE_NEXT_BUY",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 90,
+      forwardDemand: 90,
+      weeksOfCover: 10,
+      maintainDepthContext: true,
+    }),
+    "HOLD",
+  );
+  assert.equal(
+    generateModelRecommendation({
+      ...input,
+      fitAdjustedDemand: 90,
+      forwardDemand: 110,
+      weeksOfCover: 10,
+    }),
+    "HOLD",
+  );
+  assert.equal(
+    generateModelRecommendation({ ...input, planningExpectation: null }),
+    null,
+  );
+  assert.deepEqual(
+    applyAnalystOverride("BUY_DEEPER", {
+      analystRecommendation: "INVESTIGATE",
+      overrideType: "FIT_SIGNAL",
+      analystReason:
+        "Elevated L→M exchanges materially weaken retained L demand.",
+    }),
+    {
+      modelRecommendation: "BUY_DEEPER",
+      analystRecommendation: "INVESTIGATE",
+      overrideType: "FIT_SIGNAL",
+      analystReason:
+        "Elevated L→M exchanges materially weaken retained L demand.",
+    },
+  );
+});

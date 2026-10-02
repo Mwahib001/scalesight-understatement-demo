@@ -11,7 +11,9 @@
   },
   "include": [
     "src/data/**/*.ts",
-    "src/engine/**/*.ts",
+    "src/lib/**/*.ts",
+    "src/types/**/*.ts",
+    "src/config/**/*.ts",
     "tests/planning.test.ts"
   ]
 }

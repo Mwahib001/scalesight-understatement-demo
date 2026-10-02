@@ -1,5 +1,4 @@
-import { WeeklyBrief } from "../components/WeeklyBrief";
-export const metadata = { title: "Weekly Planning Brief | ScaleSight" };
+import { WeeklyBrief } from "../components/PlanningPages";
 export default function Page() {
   return <WeeklyBrief />;
 }

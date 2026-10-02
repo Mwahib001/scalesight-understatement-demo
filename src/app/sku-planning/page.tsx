@@ -1,5 +1,4 @@
-import { SKUDetail } from "../../components/SKUDetail";
-export const metadata = { title: "SKU Planning | ScaleSight" };
+import { VariantPlanning } from "../../components/VariantPlanning";
 export default function Page() {
-  return <SKUDetail />;
+  return <VariantPlanning />;
 }

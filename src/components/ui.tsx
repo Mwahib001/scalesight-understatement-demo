@@ -1,133 +1,174 @@
-"use client";
 import Link from "next/link";
-import { ArrowRight, CalendarDays, CircleCheck, Info } from "lucide-react";
-import { usePlanning } from "../context/PlanningContext";
-import { detailedSkus } from "../data/kelarune";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  FlaskConical,
+  HelpCircle,
+  Info,
+  Minus,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
+import type { DecisionAction } from "../types";
+import {
+  confidenceExplanation,
+  decisionLabels,
+  fitDisclaimer,
+  dataDisclaimer,
+} from "../config/workspace";
+export function IllustrativeDataBadge() {
+  return (
+    <span className="tooltip-wrap data-badge" tabIndex={0}>
+      <FlaskConical size={14} />
+      ILLUSTRATIVE DATA
+      <span className="tooltip" role="tooltip">
+        {dataDisclaimer}
+      </span>
+    </span>
+  );
+}
 export function PageHeading({
   eyebrow,
   title,
   description,
-  children,
 }: {
   eyebrow: string;
   title: string;
-  description: string;
-  children?: React.ReactNode;
+  description?: string;
 }) {
   return (
     <div className="page-heading">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        <p className="page-description">{description}</p>
-      </div>
-      {children ?? (
-        <span className="date-chip">
-          <CalendarDays size={15} />
-          Week of Sep 14, 2026
-        </span>
-      )}
+      <p className="eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      {description && <p className="page-description">{description}</p>}
     </div>
   );
 }
-export function SectionHeading({
+export function Panel({
   title,
-  description,
+  eyebrow,
   children,
+  className = "",
+  aside,
 }: {
-  title: string;
-  description?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="section-heading">
-      <div>
-        <h2>{title}</h2>
-        {description && <p>{description}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-export function PlanLink({
-  href,
-  skuId,
-  children,
-  className = "text-link",
-}: {
-  href: string;
-  skuId?: string;
+  title?: string;
+  eyebrow?: string;
   children: React.ReactNode;
   className?: string;
+  aside?: React.ReactNode;
 }) {
-  const { selectSku } = usePlanning();
   return (
-    <Link
-      href={href}
-      className={className}
-      onClick={() => {
-        if (skuId) selectSku(skuId);
-      }}
-    >
+    <section className={`panel ${className}`}>
+      {(title || eyebrow) && (
+        <div className="panel-heading">
+          <div>
+            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+            {title && <h2>{title}</h2>}
+          </div>
+          {aside}
+        </div>
+      )}
       {children}
-      <ArrowRight size={15} />
-    </Link>
+    </section>
   );
 }
-export function HorizonSwitcher() {
-  const { state, update } = usePlanning();
+export function DecisionBadge({
+  decision,
+}: {
+  decision: DecisionAction | "SET RISK" | "CURVE SHIFT";
+}) {
+  const Icon =
+    decision === "BUY_DEEPER"
+      ? ArrowUpRight
+      : decision === "HOLD"
+        ? Minus
+        : decision === "INVESTIGATE"
+          ? Search
+          : decision === "CURVE SHIFT"
+            ? ArrowRight
+            : decision === "REPLENISH"
+              ? Check
+              : TriangleAlert;
   return (
-    <div className="segmented" aria-label="Forecast horizon">
-      {([4, 8, 13, 26] as const).map((h) => (
-        <button
-          key={h}
-          aria-pressed={state.forecastHorizon === h}
-          onClick={() => update({ forecastHorizon: h })}
-        >
-          {h} weeks
-        </button>
-      ))}
-    </div>
+    <span
+      className={`status status-${decision.toLowerCase().replaceAll(" ", "_")}`}
+    >
+      <Icon size={13} />
+      {decision in decisionLabels
+        ? decisionLabels[decision as DecisionAction]
+        : decision}
+    </span>
   );
 }
-export function SkuSelector() {
-  const { state, selectSku } = usePlanning();
+export function ConfidenceBadge() {
   return (
-    <label className="sku-selector">
-      Planning SKU
-      <select
-        value={state.selectedSkuId}
-        onChange={(e) => selectSku(e.target.value)}
-      >
-        {detailedSkus.map((s) => (
-          <option value={s.id} key={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-export function PlanningFilters() {
-  return (
-    <div className="filter-bar">
-      <SkuSelector />
-      <div>
-        <span className="field-label">Forecast horizon</span>
-        <HorizonSwitcher />
-      </div>
-      <span className="muted filter-note">
-        <CircleCheck size={15} />
-        Shared across your workspace
+    <span className="tooltip-wrap" tabIndex={0}>
+      <span className="confidence">
+        <HelpCircle size={14} />
+        Moderate confidence
       </span>
+      <span className="tooltip" role="tooltip">
+        {confidenceExplanation}
+      </span>
+    </span>
+  );
+}
+export function Metric({
+  value,
+  label,
+  detail,
+}: {
+  value: string | number;
+  label: string;
+  detail?: string;
+}) {
+  return (
+    <div className="metric">
+      <strong>{value}</strong>
+      <span>{label}</span>
+      {detail && <small>{detail}</small>}
     </div>
+  );
+}
+export function NextLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link className="text-link" href={href}>
+      {children}
+      <ArrowRight size={16} />
+    </Link>
   );
 }
 export function Interpretation({ children }: { children: React.ReactNode }) {
   return (
     <div className="interpretation">
-      <Info size={17} />
-      <p>{children}</p>
+      <Info size={19} />
+      <div>
+        <span className="eyebrow">SCALESIGHT INTERPRETATION</span>
+        <p>{children}</p>
+      </div>
     </div>
+  );
+}
+export function FitNote() {
+  return (
+    <p className="source-note">
+      <Info size={14} />
+      {fitDisclaimer}
+    </p>
+  );
+}
+export function HypothesisBadge() {
+  return (
+    <span className="hypothesis-badge">
+      <Info size={14} />
+      ILLUSTRATIVE PLANNING HYPOTHESIS
+    </span>
   );
 }

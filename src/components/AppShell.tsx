@@ -2,154 +2,142 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
-  ArrowUpRight,
+  ArrowRight,
   BookOpen,
   ChartNoAxesCombined,
-  ChevronDown,
-  CircleCheck,
   FileText,
   FlaskConical,
-  Layers3,
+  Layers,
   Menu,
   Package,
-  Radio,
+  Plus,
   Settings2,
-  Sparkles,
+  ShieldCheck,
+  Users,
   Workflow,
   X,
 } from "lucide-react";
 import { PlanningProvider, usePlanning } from "../context/PlanningContext";
-import { client } from "../data/kelarune";
-const nav = [
-  ["/", "Weekly Planning Brief", FileText],
-  ["/revenue-forecast", "Revenue Forecast", ChartNoAxesCombined],
-  ["/demand-forecast", "Demand Forecast", Activity],
-  ["/inventory", "Inventory Health", Package],
-  ["/sku-planning", "SKU Planning", Layers3],
+import { IllustrativeDataBadge } from "./ui";
+export const navigation = [
+  ["/", "Weekly Brief", FileText],
+  ["/alpha-composition", "Alpha Composition", Users],
+  ["/size-curve", "Size Curve", ChartNoAxesCombined],
+  ["/fit-movement", "Fit Movement", Activity],
+  ["/sku-planning", "SKU & Size Planning", Layers],
+  ["/size-depth", "Size Depth", Package],
+  ["/plus-opportunity", "+ Opportunity", Plus],
   ["/scenario", "Scenario Planning", Settings2],
-  ["/intelligence", "Intelligence Center", Radio],
+  ["/forecast-learning", "Forecast Learning", BookOpen],
   ["/managed-intelligence", "Managed Intelligence", Workflow],
-  ["/assumptions", "Planning Assumptions", BookOpen],
+  ["/assumptions", "Assumptions & Customisation", ShieldCheck],
 ] as const;
 function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const [menu, setMenu] = useState(false);
-  const { plan, resetToBasePlan } = usePlanning();
+  const sidebar = useRef<HTMLElement>(null);
+  const { state, output, reset } = usePlanning();
   useEffect(() => {
     if (!menu) return;
     const trigger = document.activeElement as HTMLElement | null;
-    const oldOverflow = document.body.style.overflow;
+    const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const sidebar = document.querySelector<HTMLElement>(".sidebar");
-    sidebar?.querySelector<HTMLButtonElement>(".mobile-close")?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenu(false);
-      if (event.key === "Tab" && sidebar) {
-        const focusable = Array.from(
-          sidebar.querySelectorAll<HTMLElement>("a,button"),
+    sidebar.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(false);
+      if (e.key === "Tab") {
+        const elements = Array.from(
+          sidebar.current?.querySelectorAll<HTMLElement>("a,button") ?? [],
         ).filter((el) => el.offsetParent !== null);
-        const first = focusable[0],
-          last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
+        const first = elements[0],
+          last = elements.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
           last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
           first?.focus();
         }
       }
     };
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("keydown", key);
     return () => {
-      document.body.style.overflow = oldOverflow;
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keydown", key);
+      document.body.style.overflow = overflow;
       trigger?.focus();
     };
   }, [menu]);
-
+  const scenarioActive = state.mode !== "BASE" || !output.isExactPreset;
   return (
     <>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
+      {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
       <aside
+        ref={sidebar}
         className={`sidebar ${menu ? "is-open" : ""}`}
         role={menu ? "dialog" : undefined}
-        aria-modal={menu ? true : undefined}
-        aria-label={menu ? "Workspace navigation" : undefined}
+        aria-modal={menu || undefined}
+        aria-label="Workspace navigation"
       >
-        <Link href="/" className="brand">
+        <Link className="brand" href="/" onClick={() => setMenu(false)}>
           <Image
-            className="brand-logo"
-            src="/logos/scalesight logo coloured bg.svg"
+            src="/logos/scalesight white primary logo.svg"
             alt="ScaleSight"
-            width={1135.14}
-            height={395.86}
-            loading="eager"
+            width={180}
+            height={62}
+            priority
           />
-          <small>MANAGED INTELLIGENCE</small>
+          <small>MANAGED PLANNING INTELLIGENCE</small>
         </Link>
         <button
           className="mobile-close icon-button"
           aria-label="Close navigation"
           onClick={() => setMenu(false)}
         >
-          <X size={20} />
+          <X size={22} />
         </button>
-        <div className="client-switch">
-          <span className="client-avatar">K</span>
+        <div className="client-context">
+          <span className="client-mark">U.</span>
           <div>
-            <strong>Kelarune Hydration</strong>
-            <small>Planning workspace</small>
+            <strong>Understatement</strong>
+            <small>Size curve planning</small>
           </div>
-          <ChevronDown size={15} />
         </div>
         <nav aria-label="Primary navigation">
-          {nav.map(([href, label, Icon], i) => (
+          {navigation.map(([href, label, Icon], i) => (
             <div key={href}>
-              {(i === 0 || i === 6) && (
+              {(i === 0 || i === 9) && (
                 <p className="nav-label">
-                  {i === 0 ? "YOUR PLANNING SYSTEM" : "YOUR INTELLIGENCE TEAM"}
+                  {i === 0 ? "PLANNING" : "SCALESIGHT SERVICE"}
                 </p>
               )}
               <Link
-                className={path === href ? "active" : ""}
                 href={href}
-                onClick={() => setMenu(false)}
+                className={path === href ? "active" : ""}
                 aria-current={path === href ? "page" : undefined}
+                onClick={() => setMenu(false)}
               >
-                <Icon size={18} strokeWidth={1.7} />
+                <Icon size={17} />
                 <span>{label}</span>
-                {href === "/intelligence" && (
-                  <b className="nav-count">{plan.high}</b>
-                )}
               </Link>
             </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="analyst-status">
-            <span className="status-dot" />
-            Continuously monitored
-          </div>
+          <ShieldCheck size={18} />
           <p>
-            Your data. Our analysis.
-            <br />
-            Better decisions, together.
+            Managed by ScaleSight.
+            <small>
+              Analysis maintained.
+              <br />
+              Decisions made together.
+            </small>
           </p>
-          <Link href="/managed-intelligence#pilot">
-            Explore the planning pilot <ArrowUpRight size={14} />
-          </Link>
-        </div>
-        <div className="sidebar-profile">
-          <span className="profile-avatar">SS</span>
-          <div>
-            <strong>Your ScaleSight team</strong>
-            <small>Weekly guidance. Ongoing support.</small>
-          </div>
         </div>
       </aside>
       <div className="workspace">
@@ -157,48 +145,42 @@ function Shell({ children }: { children: React.ReactNode }) {
           <button
             className="menu-toggle icon-button"
             aria-label="Open navigation"
-            onClick={() => setMenu(!menu)}
+            onClick={() => setMenu(true)}
           >
             <Menu size={22} />
           </button>
-          <div className="breadcrumb">
-            Workspace <span>/</span>
-            <strong>{nav.find((n) => n[0] === path)?.[1] ?? "Planning"}</strong>
+          <div className="workspace-title">
+            <strong>UNDERSTATEMENT × NATURANA</strong>
+            <span>Size Curve Planning</span>
           </div>
           <div className="topbar-right">
-            <span className="refresh">
-              <CircleCheck size={14} />
-              Updated Sep 17 · 6:00 AM
-            </span>
-            <span className="demo-badge" tabIndex={0}>
-              <FlaskConical size={13} />
-              Demo Data
-              <span className="badge-tooltip" role="tooltip">
-                This is a fictional ecommerce brand using synthetic data to
-                demonstrate the ScaleSight planning workflow.
-              </span>
-            </span>
-            <span className="top-avatar">K</span>
+            <span className="concept-badge">Illustrative Planning Concept</span>
+            <span className="refresh">Refreshed 30 Sep · 06:00 CEST</span>
+            <IllustrativeDataBadge />
           </div>
         </header>
         <main id="main-content">
-          {plan.isScenario && (
+          {scenarioActive && (
             <div className="scenario-banner">
               <FlaskConical size={16} />
-              <span>
-                Illustrative scenario active · {plan.selected.sku.name} ·
-                assumption-based outputs across this workspace
-              </span>
-              <button onClick={resetToBasePlan}>Reset to base plan</button>
+              <div>
+                <strong>
+                  {output.preset.label} ·{" "}
+                  {output.isExactPreset
+                    ? "supplied preset"
+                    : "edited assumptions"}
+                </strong>
+                <span>Illustrative assumption-based scenario.</span>
+              </div>
+              <button onClick={reset}>Reset to Base Plan</button>
             </div>
           )}
           {children}
           <footer className="page-footer">
-            <span>
-              <Sparkles size={14} />
-              Planning system + analyst judgment + ongoing guidance
-            </span>
-            <span>{client.name} · Synthetic demo</span>
+            <span>Managed by ScaleSight.</span>
+            <Link href="/assumptions">
+              Assumptions & Customisation <ArrowRight size={13} />
+            </Link>
           </footer>
         </main>
       </div>

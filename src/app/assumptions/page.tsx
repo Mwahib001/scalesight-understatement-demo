@@ -1,5 +1,4 @@
-import { AssumptionTable } from "../../components/AssumptionTable";
-export const metadata = { title: "Planning Assumptions | ScaleSight" };
+import { Assumptions } from "../../components/ServicePages";
 export default function Page() {
-  return <AssumptionTable />;
+  return <Assumptions />;
 }

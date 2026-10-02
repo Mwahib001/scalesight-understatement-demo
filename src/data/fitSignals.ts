@@ -1,0 +1,61 @@
+import type { FitSignal } from "../types";
+export const fitSignals: readonly FitSignal[] = [
+  {
+    label: "Cherry L",
+    productId: "CH-BRA",
+    size: "L",
+    gross: 34,
+    returns: 4,
+    exchangeOut: 6,
+    exchangeIn: 1,
+    retained: 25,
+    initialExpectedRetainedDemand: 29,
+    index: 86,
+    decision: "INVESTIGATE",
+  },
+  {
+    label: "Cherry M",
+    productId: "CH-BRA",
+    size: "M",
+    gross: 30,
+    returns: 2,
+    exchangeOut: 1,
+    exchangeIn: 4,
+    retained: 31,
+    initialExpectedRetainedDemand: 26,
+    index: 119,
+    decision: "BUY_DEEPER",
+  },
+  {
+    label: "Candy Pink M",
+    productId: "CP-BRA",
+    size: "M",
+    gross: 36,
+    returns: 2,
+    exchangeOut: 1,
+    exchangeIn: 4,
+    retained: 37,
+    initialExpectedRetainedDemand: 29,
+    index: 128,
+    decision: "BUY_DEEPER",
+  },
+];
+export const cherryMovement = { exchangeOut: 6, movedToM: 4 } as const;
+export const matchingSetRisks = [
+  {
+    set: "Candy Pink",
+    size: "M",
+    topProductId: "CP-BRA",
+    bottomProductId: "CP-BTM",
+    topCover: 2.0,
+    bottomCover: 1.8,
+  },
+  {
+    set: "Cherry",
+    size: "M",
+    topProductId: "CH-BRA",
+    bottomProductId: "CH-BTM",
+    topCover: 2.2,
+    bottomCover: 1.7,
+  },
+] as const;

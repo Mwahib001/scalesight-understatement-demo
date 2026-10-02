@@ -525,6 +525,12 @@ main {
 .priority-card .text-link {
   margin-top: auto;
 }
+.calendly-link {
+  min-height: 44px;
+}
+.calendly-link svg {
+  flex-shrink: 0;
+}
 .status {
   font-size: 9px;
   font-weight: 750;

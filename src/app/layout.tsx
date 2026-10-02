@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
+import "./vendor/calendly-widget.css";
 import { AppShell } from "../components/AppShell";
 export const metadata: Metadata = {
   title: "ScaleSight × Understatement — Size Curve Planning",
@@ -17,6 +19,12 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AppShell>{children}</AppShell>
+        {process.env.NEXT_PUBLIC_CALENDLY_URL?.trim() && (
+          <Script
+            src="https://assets.calendly.com/assets/external/widget.js"
+            strategy="afterInteractive"
+          />
+        )}
       </body>
     </html>
   );

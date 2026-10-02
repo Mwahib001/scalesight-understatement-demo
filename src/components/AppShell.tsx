@@ -1,4 +1,6 @@
 "use client";
+
+import { CalendlyLink } from "./CalendlyLink";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -168,6 +170,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             <span className="concept-badge">Illustrative Planning Concept</span>
             <span className="refresh">Refreshed 30 Sep · 06:00 CEST</span>
             <IllustrativeDataBadge />
+            <CalendlyLink>Book a call</CalendlyLink>
           </div>
         </header>
         <main id="main-content">
@@ -189,6 +192,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           {children}
           <footer className="page-footer">
             <span>Managed by ScaleSight.</span>
+            <CalendlyLink>Contact</CalendlyLink>
             <Link href="/assumptions">
               Assumptions & Customisation <ArrowRight size={13} />
             </Link>

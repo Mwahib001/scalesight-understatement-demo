@@ -3,6 +3,7 @@ import { PageHeading, Panel, Metric, NextLink, FitNote } from "./ui";
 import { dataDisclaimer, timeline } from "../config/workspace";
 import { products } from "../data/products";
 import { AnalystReview } from "./AnalystReview";
+import { CalendlyLink } from "./CalendlyLink";
 const managedCycle = [
   [
     "DATA REFRESH",
@@ -145,9 +146,9 @@ export function ManagedIntelligence() {
           decisions that matter.
         </p>
         <div className="pilot-links">
-          <NextLink href="/assumptions#live-planning">
+          <CalendlyLink>
             Discuss an Understatement Planning Pilot
-          </NextLink>
+          </CalendlyLink>
           <NextLink href="/assumptions#customisation">
             See What Could Be Customised
           </NextLink>

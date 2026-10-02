@@ -23,6 +23,7 @@ async function checkRoute(page: Page, route: string, heading: string) {
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
   await expect(page.locator(".data-badge")).toBeVisible();
+  await expect(page.locator(".concept-badge")).toBeVisible();
   await expect(page.locator(".refresh")).toHaveText(
     "Refreshed 30 Sep · 06:00 CEST",
   );
@@ -34,6 +35,17 @@ async function checkRoute(page: Page, route: string, heading: string) {
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  expect(
+    await page
+      .locator(
+        ".metric,.card-heading,.fit-flow,.panel-heading,.module-card,.topbar",
+      )
+      .evaluateAll((elements) =>
+        elements
+          .filter((element) => element.scrollWidth > element.clientWidth + 1)
+          .map((element) => element.className),
+      ),
+  ).toEqual([]);
 }
 
 for (const [route, heading] of routes) {
@@ -60,8 +72,12 @@ for (const [route, heading] of routes) {
 
 for (const [width, height] of [
   [1280, 720],
+  [1024, 768],
+  [850, 900],
   [768, 1024],
+  [600, 900],
   [390, 844],
+  [320, 812],
 ]) {
   test(`all routes remain readable at ${width}px`, async ({ page }) => {
     test.setTimeout(60000);
@@ -87,6 +103,70 @@ for (const [width, height] of [
     }
   });
 }
+
+test("mobile navigation hides closed links, traps focus and releases scrolling after desktop resize", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("link", { name: "Skip to content" }),
+  ).toBeFocused();
+  await page.keyboard.press("Tab");
+  const toggle = page.getByRole("button", { name: "Open navigation" });
+  await expect(toggle).toBeFocused();
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await toggle.click();
+  const menu = page.getByRole("dialog", { name: "Workspace navigation" });
+  await expect(menu).toBeVisible();
+  await expect(page.locator(".workspace")).toHaveAttribute("inert", "");
+  await menu
+    .getByRole("link", { name: "Assumptions & Customisation", exact: true })
+    .focus();
+  await page.keyboard.press("Tab");
+  await expect(menu.locator(".brand")).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".workspace")).not.toHaveAttribute("inert");
+  await expect
+    .poll(() => page.evaluate(() => document.body.style.overflow))
+    .toBe("");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+});
+
+test("narrow charts retain every size label and disclosures fit the viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 812 });
+  await page.goto("/plus-opportunity");
+  await expect(
+    page
+      .getByRole("application")
+      .locator("text")
+      .filter({ hasText: /^(XS|S|M|M\+|L|L\+|XL|XXL|3XL)$/ }),
+  ).toHaveText(["XS", "S", "M", "M+", "L", "L+", "XL", "XXL", "3XL"]);
+  await page.locator(".data-badge").focus();
+  const tooltip = page.locator(".data-badge .tooltip");
+  await expect(tooltip).toBeVisible();
+  const bounds = await tooltip.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(812);
+  await page.goto("/size-curve");
+  await expect(
+    page
+      .getByRole("application")
+      .locator("text")
+      .filter({ hasText: /^(XS|S|M|L|XL|XXL|3XL)$/ }),
+  ).toHaveText(["XS", "S", "M", "L", "XL", "XXL", "3XL"]);
+  await page.locator(".panel-heading .tooltip-wrap").focus();
+  await expect(page.locator(".panel-heading .tooltip")).toBeInViewport();
+});
 
 test("brief has exactly four specified priorities and seven changes", async ({
   page,
@@ -184,6 +264,11 @@ test("chart tables expose all canonical curves and the sole directional movement
   page,
 }) => {
   await page.goto("/size-curve");
+  for (const colour of ["#bdc8db", "#9381db", "#2563eb"]) {
+    await expect(
+      page.getByRole("application").locator(`[fill="${colour}"]`).first(),
+    ).toBeVisible();
+  }
   await page.getByText("View chart data", { exact: true }).click();
   const table = page.locator(".chart-data table");
   await expect(table.locator("tbody tr")).toHaveCount(7);
@@ -211,6 +296,11 @@ test("chart tables expose all canonical curves and the sole directional movement
     }),
   ).toBeVisible();
   await page.goto("/size-depth");
+  for (const colour of ["#bdc8db", "#2563eb"]) {
+    await expect(
+      page.getByRole("application").locator(`[fill="${colour}"]`).first(),
+    ).toBeVisible();
+  }
   await expect(
     page.getByText(
       "This does not mean every future Understatement style should use this curve.",
@@ -218,6 +308,11 @@ test("chart tables expose all canonical curves and the sole directional movement
     ),
   ).toBeVisible();
   await page.goto("/plus-opportunity");
+  for (const colour of ["#bdc8db", "#9381db"]) {
+    await expect(
+      page.getByRole("application").locator(`[fill="${colour}"]`).first(),
+    ).toBeVisible();
+  }
   await expect(
     page.getByText("ILLUSTRATIVE PLANNING HYPOTHESIS", { exact: true }),
   ).toBeVisible();

@@ -16,7 +16,8 @@ import {
   ConfidenceBadge,
   DecisionBadge,
 } from "./ui";
-import { PlanningChart, chartColors } from "./PlanningCharts";
+import { PlanningChart } from "./PlanningCharts";
+import { chartColors } from "../config/workspace";
 const controls: readonly {
   key: Exclude<
     keyof ScenarioState,

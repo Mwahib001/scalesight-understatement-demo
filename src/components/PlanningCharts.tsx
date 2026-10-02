@@ -43,9 +43,13 @@ export function PlanningChart({
             />
             <XAxis
               dataKey="size"
+              interval={0}
               tickLine={false}
               axisLine={false}
-              tick={{ fill: "#526079", fontSize: 12 }}
+              tick={{
+                fill: "#526079",
+                fontSize: "var(--chart-tick-size, 11px)",
+              }}
             />
             <YAxis
               tickLine={false}
@@ -58,7 +62,12 @@ export function PlanningChart({
               cursor={{ fill: "#f2f5fb" }}
               formatter={(v) => [`${v}${unit === "%" ? "%" : " units"}`]}
             />
-            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+            <Legend
+              wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
+              formatter={(value) => (
+                <span style={{ color: "#526079" }}>{value}</span>
+              )}
+            />
             {series.map((s) => (
               <Bar
                 key={s.key}
@@ -176,8 +185,3 @@ export function CompositionChart() {
     </div>
   );
 }
-export const chartColors = {
-  initial: "#bdc8db",
-  gross: "#9381db",
-  adjusted: "#2563eb",
-};

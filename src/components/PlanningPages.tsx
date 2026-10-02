@@ -11,7 +11,11 @@ import {
   HypothesisBadge,
 } from "./ui";
 import { priorities, reviewChanges } from "../data/weeklyBrief";
-import { timeline, compositionDisclaimer } from "../config/workspace";
+import {
+  timeline,
+  compositionDisclaimer,
+  chartColors,
+} from "../config/workspace";
 import { immediateActions } from "../data/variants";
 import { fitComposition, learningCohorts } from "../data/fitComposition";
 import {
@@ -22,7 +26,7 @@ import {
 } from "../data/sizeCurves";
 import { fitSignals, cherryMovement } from "../data/fitSignals";
 import { calculateExchangeOutRate } from "../lib/calculations";
-import { PlanningChart, CompositionChart, chartColors } from "./PlanningCharts";
+import { PlanningChart, CompositionChart } from "./PlanningCharts";
 import { AnalystReview } from "./AnalystReview";
 import { MatchingSets } from "./MatchingSets";
 export function WeeklyBrief() {

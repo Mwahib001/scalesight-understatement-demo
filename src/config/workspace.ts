@@ -8,6 +8,12 @@ export const timeline = {
   currency: "EUR",
   defaultHorizon: 8,
 } as const;
+// Shared by server-rendered narrative pages and client scenario controls.
+export const chartColors = {
+  initial: "#bdc8db",
+  gross: "#9381db",
+  adjusted: "#2563eb",
+} as const;
 export const dataDisclaimer =
   "Product, size and catalog information is based on publicly available information. Sales, inventory, returns, exchanges, costs, forecasts, fit-cohort compositions and recommendations are synthetic assumptions created solely to demonstrate the ScaleSight planning workflow.";
 export const fitDisclaimer =

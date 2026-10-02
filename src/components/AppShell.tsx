@@ -41,6 +41,14 @@ function Shell({ children }: { children: React.ReactNode }) {
   const sidebar = useRef<HTMLElement>(null);
   const { state, output, reset } = usePlanning();
   useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 851px)");
+    const closeMobileMenu = () => {
+      if (desktop.matches) setMenu(false);
+    };
+    desktop.addEventListener("change", closeMobileMenu);
+    return () => desktop.removeEventListener("change", closeMobileMenu);
+  }, []);
+  useEffect(() => {
     if (!menu) return;
     const trigger = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
@@ -78,6 +86,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       </a>
       {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
       <aside
+        id="workspace-navigation"
         ref={sidebar}
         className={`sidebar ${menu ? "is-open" : ""}`}
         role={menu ? "dialog" : undefined}
@@ -140,11 +149,13 @@ function Shell({ children }: { children: React.ReactNode }) {
           </p>
         </div>
       </aside>
-      <div className="workspace">
+      <div className="workspace" inert={menu}>
         <header className="topbar">
           <button
             className="menu-toggle icon-button"
             aria-label="Open navigation"
+            aria-controls="workspace-navigation"
+            aria-expanded={menu}
             onClick={() => setMenu(true)}
           >
             <Menu size={22} />
